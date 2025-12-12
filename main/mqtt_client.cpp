@@ -115,8 +115,8 @@ mqtt_connected_promise::mqtt_connected_promise(esp_mqtt_client_handle_t client)
 }
 
 mqtt_connected_promise::~mqtt_connected_promise() {
-  ESP_ERROR_CHECK(esp_mqtt_client_unregister_event(_client, MQTT_EVENT_ANY,
-                                                   mqtt_event_handler));
+  ESP_ERROR_CHECK(esp_mqtt_client_unregister_event(
+      _client, MQTT_EVENT_CONNECTED, mqtt_event_handler));
 }
 
 void mqtt_connected_promise::wait() { _future.wait(); }
