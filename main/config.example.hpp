@@ -2,7 +2,7 @@
 
 #include "mqtt_client.hpp"
 
-#include "spymarine/read_devices.hpp"
+#include "spymarine/spymarine.hpp"
 
 #include <chrono>
 
@@ -31,8 +31,17 @@ inline esp_mqtt_client_config_t make_mqtt_config() {
   return config;
 }
 
-inline auto make_device_filter() {
-  return spymarine::filter_by_device_type<spymarine::temperature_device,
-                                          spymarine::tank_device,
-                                          spymarine::battery_device>{};
-}
+constexpr auto state_config = spymarine::home_assistant_state_config{
+    .use_average_value_for_current_and_voltage = true,
+};
+
+template <typename... DeviceTypes> struct filter_by_device_type {
+  constexpr bool operator()(const spymarine::device& devices) const {
+    return (std::holds_alternative<DeviceTypes>(devices) || ...);
+  }
+};
+
+constexpr auto device_filter =
+    filter_by_device_type<spymarine::temperature_device, spymarine::tank_device,
+                          spymarine::battery_device,
+                          spymarine::barometer_device>{};
