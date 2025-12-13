@@ -56,7 +56,7 @@ wifi_connected_promise::wifi_connected_promise()
 
 wifi_connected_promise::~wifi_connected_promise() {
   ESP_ERROR_CHECK(esp_event_handler_instance_unregister(
-      WIFI_EVENT, ESP_EVENT_ANY_ID, &_event_handler_instance));
+      IP_EVENT, IP_EVENT_STA_GOT_IP, _event_handler_instance));
 }
 
 void wifi_connected_promise::wait() { _future.wait(); }

@@ -5,12 +5,7 @@
 #include "wifi_connector.hpp"
 #include "wifi_utils.hpp"
 
-#include "spymarine/buffer.hpp"
-#include "spymarine/device_ostream.hpp"
-#include "spymarine/discover.hpp"
-#include "spymarine/home_assistant.hpp"
-#include "spymarine/read_devices.hpp"
-#include "spymarine/sensor_reader.hpp"
+#include "spymarine/spymarine.hpp"
 
 #include "esp_event.h"
 #include "esp_log.h"
@@ -22,37 +17,36 @@
 namespace {
 constexpr auto TAG = "spymarine";
 
-void send_home_assistant_device_discovery(
-    const std::vector<spymarine::device>& devices, mqtt_client& client) {
+void send_home_assistant_device_discovery(const spymarine::hub& hub,
+                                          mqtt_client& client) {
   ESP_LOGI(TAG, "Sending Home Assistant device discovery messages");
 
-  for (const auto& device : devices) {
+  for (const auto& device : hub.devices() | std::views::filter(device_filter)) {
     const auto message =
-        spymarine::make_home_assistant_device_discovery_message(device);
+        spymarine::make_home_assistant_device_discovery_message(device, hub);
     const auto published = client.publish(
         message.topic.c_str(), message.payload, mqtt_qos::at_least_once, false);
-    if (!published) {
+    if (published) {
+      ESP_LOGI(TAG, "Device discovery message sent for device %d",
+               spymarine::get_device_id(device));
+    } else {
       ESP_LOGE(TAG, "Couldn't send device discovery message");
     }
   }
 }
 
-void publish_sensor_values(const std::vector<spymarine::device>& devices,
-                           mqtt_client& client) {
+void publish_sensor_values(const spymarine::hub& hub, mqtt_client& client) {
   ESP_LOGI(TAG, "Sending Home Assistant sensor messags");
 
-  for (const auto& device : devices) {
-    const auto message = make_home_assistant_state_message(device);
+  for (const auto& device : hub.devices() | std::views::filter(device_filter)) {
+    const auto message =
+        spymarine::make_home_assistant_state_message(device, hub, state_config);
     client.publish(message.topic.c_str(), message.payload,
                    mqtt_qos::at_most_once, false);
   }
 }
 
-void process_sensor_values(
-    const std::vector<spymarine::device>& devices,
-    spymarine::moving_average_sensor_reader<spymarine::udp_socket>&
-        sensor_reader,
-    mqtt_client& client) {
+void process_sensor_values(spymarine::hub& hub, mqtt_client& client) {
   ESP_LOGI(TAG, "Start processing sensor values");
 
   std::atomic<bool> reinitialize = false;
@@ -63,62 +57,59 @@ void process_sensor_values(
                      }
                    });
 
+  using clock = std::chrono::steady_clock;
+  auto last_update_time = clock::now();
+
   while (true) {
     if (reinitialize) {
       send_mqtt_logger_device_discovery();
-      send_home_assistant_device_discovery(devices, client);
-      sensor_reader.read_and_update().transform(
-          [&](bool) { publish_sensor_values(devices, client); });
+      send_home_assistant_device_discovery(hub, client);
+      hub.read_sensor_values();
+      publish_sensor_values(hub, client);
       reinitialize = false;
     }
 
-    const auto result =
-        sensor_reader.read_and_update().transform([&](bool window_completed) {
-          if (window_completed) {
-            publish_sensor_values(devices, client);
-          }
-        });
+    hub.read_sensor_values();
 
-    if (!result) {
-      ESP_LOGE(TAG, "Failed to read sensor values: %s",
-               spymarine::error_message(result.error()).c_str());
+    if ((clock::now() - last_update_time) >= sensor_update_interval) {
+      publish_sensor_values(hub, client);
+      hub.start_new_average_window();
+      last_update_time = clock::now();
     }
   }
 }
 
+void log_system_info(const spymarine::hub& hub) {
+  ESP_LOGI(TAG, "System Information");
+  ESP_LOGI(TAG, "  Serial Number: %d", hub.system().serial_number);
+  ESP_LOGI(TAG, "  Firmware Version: %d.%d", hub.system().fw_version.major,
+           hub.system().fw_version.minor);
+}
+
 bool start(mqtt_client& client) {
-  spymarine::buffer buffer;
-
-  auto devices = spymarine::discover().and_then([&](const auto ip) {
-    ESP_LOGI(TAG, "Read devices");
-
-    return spymarine::read_devices<spymarine::tcp_socket>(
-        buffer, ip, spymarine::simarine_default_tcp_port, make_device_filter());
-  });
-
-  if (!devices) {
-    ESP_LOGE(TAG, "Failed to read devices: %s",
-             spymarine::error_message(devices.error()).c_str());
-    return false;
+  ESP_LOGI(TAG, "Discovering Simarine system... ");
+  const auto ip = spymarine::discover();
+  if (!ip) {
+    ESP_LOGE(TAG, "failed: %s", spymarine::error_message(ip.error()).c_str());
+    return 1;
   }
+  ESP_LOGI(TAG, "done");
 
-  if (devices->size() == 0) {
+  ESP_LOGI(TAG, "Connecting... ");
+  auto hub = spymarine::connect(*ip).and_then(spymarine::initialize_hub);
+  if (!hub) {
+    ESP_LOGE(TAG, "failed: %s", spymarine::error_message(hub.error()).c_str());
+    return 1;
+  }
+  ESP_LOGI(TAG, "done");
+
+  if (hub->devices().empty()) {
     ESP_LOGE(TAG, "No devices found");
     return false;
   }
 
-  ESP_LOGI(TAG, "Found %d devices", devices->size());
-
-  auto sensor_reader = spymarine::make_moving_average_sensor_reader(
-      buffer, sensor_update_interval, *devices);
-
-  if (!sensor_reader) {
-    ESP_LOGE(TAG, "Failed to make sensor reader: %s",
-             spymarine::error_message(sensor_reader.error()).c_str());
-    return false;
-  }
-
-  process_sensor_values(*devices, *sensor_reader, client);
+  log_system_info(*hub);
+  process_sensor_values(*hub, client);
   return true;
 }
 
