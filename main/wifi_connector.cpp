@@ -107,7 +107,7 @@ wifi_connector::~wifi_connector() {
   delete_reconnect_timer();
 
   ESP_ERROR_CHECK(esp_event_handler_instance_unregister(
-      WIFI_EVENT, ESP_EVENT_ANY_ID, &_instance_any_id));
+      WIFI_EVENT, ESP_EVENT_ANY_ID, _instance_any_id));
 
   esp_netif_destroy_default_wifi(_esp_netif);
   ESP_LOGI(TAG, "Wifi stopped");
@@ -119,6 +119,10 @@ wifi_connected_promise wifi_connector::make_connected_promise() {
 
 void wifi_connector::start() {
   ESP_ERROR_CHECK(esp_wifi_start());
+
+  // Keep the station awake so WiFi power saving cannot interrupt active
+  // network operations on less stable access points.
+  ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
 
   ESP_LOGI(TAG, "Wifi started");
 }
