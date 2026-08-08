@@ -81,7 +81,8 @@ void process_sensor_values(spymarine::hub& hub, mqtt_client& client) {
 
 void log_system_info(const spymarine::hub& hub) {
   ESP_LOGI(TAG, "System Information");
-  ESP_LOGI(TAG, "  Serial Number: %d", hub.system().serial_number);
+  ESP_LOGI(TAG, "  Serial Number: %lu",
+           static_cast<unsigned long>(hub.system().serial_number));
   ESP_LOGI(TAG, "  Firmware Version: %d.%d", hub.system().fw_version.major,
            hub.system().fw_version.minor);
 }
@@ -91,7 +92,7 @@ bool start(mqtt_client& client) {
   const auto ip = spymarine::discover();
   if (!ip) {
     ESP_LOGE(TAG, "failed: %s", spymarine::error_message(ip.error()).c_str());
-    return 1;
+    return false;
   }
   ESP_LOGI(TAG, "done");
 
@@ -99,7 +100,7 @@ bool start(mqtt_client& client) {
   auto hub = spymarine::connect(*ip).and_then(spymarine::initialize_hub);
   if (!hub) {
     ESP_LOGE(TAG, "failed: %s", spymarine::error_message(hub.error()).c_str());
-    return 1;
+    return false;
   }
   ESP_LOGI(TAG, "done");
 
