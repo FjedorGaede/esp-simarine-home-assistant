@@ -14,7 +14,7 @@ Tested with Simarine Pico rev2 and firmware 1.17
 - Optional: Verify that the library can handle your Simarine setup by building and running an example app in https://github.com/christopher-strack/spymarine-cpp
 - Setup an external MQTT broker (for example http://hivemq.com)
 - Setup the MQTT integration in Home Assistant and connect to the external broker
-- Copy `src/config.example.hpp` to `src/config.hpp` and enter you Wifi password and your MQTT broker credentials or create a custom MQTT client config
+- Copy `main/config.example.hpp` to `main/config.hpp` and enter your WiFi password and MQTT broker credentials, or create a custom MQTT client config
 - Configure the `sdkconfig` to fit the app using `idf.py menuconfig`. For example:
   ```
   CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
@@ -24,6 +24,21 @@ Tested with Simarine Pico rev2 and firmware 1.17
 - Set your Simarine device to STA mode and connect it to the same Wifi network as the ESP32
 - Power and start the ESP32
 - That's it. The ESP32 uses device discovery to expose each Simarine device to Home Assistant.
+
+## MQTT availability
+
+The default configuration publishes retained availability to
+`simarine_esp/status`:
+
+- `online` is published after the ESP connects to MQTT.
+- MQTT Last Will and Testament (LWT) is configured as retained `offline`; the
+  broker publishes it if the ESP disconnects unexpectedly (power loss, crash,
+  WiFi/router failure).
+
+No broker-side setup is required beyond permission for the configured MQTT
+credentials to publish to the status topic. The broker detects an unexpected
+disconnect according to its MQTT keepalive timeout, so `offline` is not
+instantaneous.
 
 ## Known Issues
 

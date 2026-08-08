@@ -136,6 +136,8 @@ extern "C" void app_main(void) {
   }
 
   setup_mqtt_logger(mqtt_client);
+  mqtt_client.publish(mqtt_status_topic, "online", mqtt_qos::at_least_once,
+                      true);
   send_mqtt_logger_device_discovery();
 
   if (!start(mqtt_client)) {

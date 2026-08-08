@@ -16,6 +16,10 @@ constexpr auto mqtt_broker_uri = "mqtts://unique-id.s1.eu.hivemq.cloud:8883";
 constexpr auto mqtt_username = "user";
 constexpr auto mqtt_password = "password";
 
+// Retained availability topic: "online" while connected; broker-published
+// "offline" if this client disconnects unexpectedly.
+constexpr auto mqtt_status_topic = "simarine_esp/status";
+
 constexpr auto mqtt_root_ca_certificate = R"(
 -----BEGIN CERTIFICATE-----
 CERTIFICATE DATA
@@ -28,6 +32,13 @@ inline esp_mqtt_client_config_t make_mqtt_config() {
   config.broker.verification.certificate = mqtt_root_ca_certificate;
   config.credentials.username = mqtt_username;
   config.credentials.authentication.password = mqtt_password;
+  config.session.last_will = {
+      .topic = mqtt_status_topic,
+      .msg = "offline",
+      .msg_len = 0,
+      .qos = static_cast<int>(mqtt_qos::at_least_once),
+      .retain = true,
+  };
   return config;
 }
 
